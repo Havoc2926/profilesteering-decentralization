@@ -31,10 +31,10 @@ def create_devices():
         HeatPump(),
     ]
 
-def main():
+def main(alpha=1.0, plot=True):
     profile_length = 96
     population = 10
-    gossip_rounds = 30
+    gossip_rounds = 60
     ps_rounds = 100
 
     #Desired global profile
@@ -64,6 +64,7 @@ def main():
     objective_history = []
 
     print(f"Initial objective: {initial_obj}")
+    previous_obj = initial_obj
 
     for ps_iter in range(ps_rounds):
         print(f"\n Profile Steering iteration {ps_iter}")
@@ -90,7 +91,8 @@ def main():
         improvements = []
 
         for node in nodes:
-            improvement = node.profile_steering_step()
+
+            improvement = node.profile_steering_step(alpha)
             improvements.append(improvement)
 
         true_x = compute_true_aggregate(nodes, profile_length)
@@ -101,9 +103,11 @@ def main():
         print(f"Objective value: {obj}")
         print(f"Total improvement: {sum(improvements)}")
 
-        if sum(improvements) < 0.001:
+        if abs(previous_obj - obj) < 0.001:
             print("Converged")
             break
+
+        previous_obj = obj
 
     print("\nFinished!")
     final_x = compute_true_aggregate(nodes, profile_length)
@@ -120,6 +124,17 @@ def main():
     plt.title("Objective value over iterations")
     plt.legend()
     plt.grid(True)
-    plt.show()
+    if plot:
+        plt.show()
 
-main()
+    return {
+        "alpha": alpha,
+        "initial_objective": initial_obj,
+        "final_objective": final_obj,
+        "improvement": initial_obj - final_obj,
+        "relative_improvement": (initial_obj - final_obj) / initial_obj,
+        "iterations": len(objective_history),
+    }
+
+if __name__ == "__main__":
+    main(alpha=0.075, plot=True)

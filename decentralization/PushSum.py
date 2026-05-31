@@ -57,9 +57,9 @@ class Node:
         self.estimate = list(map(lambda x: (x / self.weight) * self.population, self.mass))
         return self.estimate
 
-    def profile_steering_step(self):
+    def profile_steering_step(self, alpha):
         estimated_x = self.make_estimate()
-        d = [(x - p) for x, p in zip(estimated_x, self.desired_profile)]
+        d = [alpha * (x - p) for x, p in zip(estimated_x, self.desired_profile)]
 
         best_device = None
         best_improvement = 0
