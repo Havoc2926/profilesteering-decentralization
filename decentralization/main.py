@@ -31,7 +31,7 @@ def create_devices():
         HeatPump(),
     ]
 
-def main(alpha=1.0, plot=True):
+def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
     profile_length = 96
     population = 10
     gossip_rounds = 60
@@ -46,6 +46,10 @@ def main(alpha=1.0, plot=True):
 
         node = Node(id=i, devices=devices, desired_profile=p, population=population)
         nodes.append(node)
+
+    num_non_steering = int(non_steering_proportion * population)
+    non_steering_ids = set(random.sample(range(population), num_non_steering))
+    print(f"Non-steering nodes ({num_non_steering}/{population}): {sorted(non_steering_ids)}")
 
     for i, node in enumerate(nodes):
         neighbours = [
@@ -87,11 +91,12 @@ def main(alpha=1.0, plot=True):
             error = objective(estimate, true_x_before_steering)
             print(f"Node {node.id} estimate error: {error}")
 
-        # Now do local Profile Steering
+        # Now do local Profile Steering (skipped for non-steering nodes)
         improvements = []
 
         for node in nodes:
-
+            if node.id in non_steering_ids:
+                continue
             improvement = node.profile_steering_step(alpha)
             improvements.append(improvement)
 
@@ -129,6 +134,8 @@ def main(alpha=1.0, plot=True):
 
     return {
         "alpha": alpha,
+        "non_steering_proportion": non_steering_proportion,
+        "non_steering_count": num_non_steering,
         "initial_objective": initial_obj,
         "final_objective": final_obj,
         "improvement": initial_obj - final_obj,
@@ -137,4 +144,4 @@ def main(alpha=1.0, plot=True):
     }
 
 if __name__ == "__main__":
-    main(alpha=0.075, plot=True)
+    main(alpha=0.075, non_steering_proportion=0.0, plot=True)
