@@ -1,39 +1,52 @@
 """
-Experiment: effect of non-steering node proportion on profile steering performance.
+Experiment: effect of permanently offline nodes on profile steering performance.
 
-For each condition (proportion × season) the experiment is repeated over multiple
-random seeds so that which specific nodes are held out is sampled, not fixed.
-Summary statistics (mean, std) are computed across seeds × seasons.
+A fixed subset of nodes is chosen once at the start of each run and is completely
+absent for the entire experiment — they never aggregate, never steer, and their
+local_profile stays at the initialised (unoptimised) value.
+
+This differs from the other two experiments:
+  - non_steering:    nodes aggregate normally but skip profile_steering_step
+  - non_aggregating: nodes skip gossip per-iteration but steer; subset re-drawn each round
+  - permanently_offline (this): nodes are gone entirely — no gossip, no steering, fixed load
+
+Online nodes use population = N_total, so when offline_fraction > 0 their push-sum
+estimates are biased upward by N_total / N_online. The true objective is computed
+over all N nodes, so the offline nodes' unoptimised load counts against the system.
+
+Sweep: offline_fraction × seed × season  (6 × 5 × 4 = 120 runs)
 """
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 import pandas as pd
-from main_real_data import main, HOUSE_IDS
-
-DAYS = {
-    "winter":  "2023-01-15",
-    "spring":  "2023-05-15",
-    "summer":  "2023-08-15",
-    "autumn":  "2023-10-15",
-}
+from main_permanently_offline import main
+from main_real_data import HOUSE_IDS
 
 ALPHA = 0.075
-PROPORTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+DAYS = {
+    "winter": "2023-01-15",
+    "spring": "2023-05-15",
+    "summer": "2023-08-15",
+    "autumn": "2023-10-15",
+}
+
+CRASH_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
 SEEDS = [42, 137, 271, 404, 531]
 
 
 def run_experiment():
     records = []
 
-    total = len(PROPORTIONS) * len(SEEDS) * len(DAYS)
+    total = len(CRASH_FRACTIONS) * len(SEEDS) * len(DAYS)
     done = 0
 
-    for proportion in PROPORTIONS:
-        n_ns = round(proportion * len(HOUSE_IDS))
-        print(f"\n{'='*60}")
-        print(f"Non-steering proportion: {proportion:.0%}  ({n_ns}/{len(HOUSE_IDS)} houses)")
+    for fraction in CRASH_FRACTIONS:
+        n_offline = round(fraction * len(HOUSE_IDS))
+        print(f"\n{'='*65}")
+        print(f"Offline fraction: {fraction:.0%}  ({n_offline}/{len(HOUSE_IDS)} nodes permanently absent)")
 
         for seed in SEEDS:
             for season, day in DAYS.items():
@@ -42,14 +55,15 @@ def run_experiment():
                 result = main(
                     day=day,
                     alpha=ALPHA,
-                    non_steering_proportion=proportion,
+                    offline_fraction=fraction,
                     seed=seed,
                     plot=False,
                 )
 
                 records.append({
-                    "non_steering_proportion": proportion,
-                    "non_steering_count": n_ns,
+                    "offline_fraction": result["offline_fraction"],
+                    "offline_count": result["offline_count"],
+                    "online_count": result["online_count"],
                     "seed": seed,
                     "season": season,
                     "day": day,
@@ -65,9 +79,10 @@ def run_experiment():
     df = pd.DataFrame(records)
 
     summary = (
-        df.groupby("non_steering_proportion")
+        df.groupby("offline_fraction")
         .agg(
-            non_steering_count=("non_steering_count", "first"),
+            offline_count=("offline_count", "first"),
+            online_count=("online_count", "first"),
             n_runs=("final_objective", "count"),
             mean_initial_objective=("initial_objective", "mean"),
             mean_final_objective=("final_objective", "mean"),
@@ -85,8 +100,8 @@ def run_experiment():
     print(summary.to_string(index=False))
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
-    raw_path = os.path.join(out_dir, "non_steering_raw.xlsx")
-    summary_path = os.path.join(out_dir, "non_steering_summary.xlsx")
+    raw_path = os.path.join(out_dir, "permanently_offline_raw.xlsx")
+    summary_path = os.path.join(out_dir, "permanently_offline_summary.xlsx")
 
     df.to_excel(raw_path, index=False)
     summary.to_excel(summary_path, index=False)

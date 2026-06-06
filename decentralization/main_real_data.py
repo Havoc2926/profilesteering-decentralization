@@ -75,34 +75,39 @@ def objective(x, p):
     return np.linalg.norm([x_i - p_i for x_i, p_i in zip(x, p)])
 
 
-def _assign_random_topology(nodes, edge_prob=0.3):
-    """
-    Build a random connected graph over nodes using Erdos-Renyi with the given
-    edge probability, then add a random spanning tree to guarantee connectivity.
-    Each node's neighbour list is set (excluding itself, undirected).
-    """
-    n = len(nodes)
-    adj = {i: set() for i in range(n)}
+TOPOLOGY = {
+    0:  [1, 12, 13, 20],
+    1:  [0, 2, 3, 13, 14],
+    2:  [1, 3, 14, 15, 23],
+    3:  [2, 4, 15, 23],
+    4:  [3, 5, 15, 23],
+    5:  [4, 6, 16, 23],
+    6:  [5, 7, 16, 17, 22],
+    7:  [6, 8, 17, 18],
+    8:  [7, 9, 17, 18],
+    9:  [8, 10, 18, 19],
+    10: [9, 11, 19, 20],
+    11: [10, 12, 19, 20],
+    12: [0, 11, 13, 20],
+    13: [0, 1, 12, 14, 20, 21],
+    14: [1, 2, 13, 15, 21, 23],
+    15: [2, 3, 4, 14, 16, 22, 23],
+    16: [5, 6, 15, 17, 22],
+    17: [6, 7, 8, 16, 18, 22],
+    18: [7, 8, 9, 17, 19, 22],
+    19: [9, 10, 11, 18, 20, 21],
+    20: [0, 10, 11, 12, 13, 19, 21],
+    21: [13, 14, 19, 20, 22],
+    22: [6, 15, 16, 17, 18, 21, 23],
+    23: [2, 3, 4, 5, 14, 15, 22],
+}
 
-    # Random spanning tree via a random walk (guarantees connectivity)
-    unvisited = list(range(1, n))
-    random.shuffle(unvisited)
-    visited = [0]
-    for v in unvisited:
-        u = random.choice(visited)
-        adj[u].add(v)
-        adj[v].add(u)
-        visited.append(v)
 
-    # Add extra random edges
-    for i in range(n):
-        for j in range(i + 1, n):
-            if j not in adj[i] and random.random() < edge_prob:
-                adj[i].add(j)
-                adj[j].add(i)
-
-    for i, node in enumerate(nodes):
-        node.add_neighbours([nodes[j] for j in sorted(adj[i])])
+def _assign_topology(nodes):
+    """Assign the fixed Aardehuizen topology to the node list."""
+    node_map = {node.id: node for node in nodes}
+    for node in nodes:
+        node.add_neighbours([node_map[nbr_id] for nbr_id in TOPOLOGY[node.id]])
 
 
 def main(
@@ -113,7 +118,7 @@ def main(
     crash_fraction=0.0,
     crash_duration_rounds=0,
     non_aggregating_proportion=0.0,
-    gossip_rounds=None,
+    non_aggregating_duration=None,
     seed=None,
     plot=True,
     with_battery=True,
@@ -127,9 +132,8 @@ def main(
 
     house_profiles = load_day_profiles(day_index)
     population = len(HOUSE_IDS)
-    if gossip_rounds is None:
-        gossip_rounds = math.ceil(population * math.log(population))
-    ps_rounds = 100
+    gossip_rounds = 15 * population
+    ps_rounds = 160
 
     # Use a flat target equal to the mean aggregate power (minimise peaks)
     initial_aggregate = [0.0] * INTERVALS_PER_DAY
@@ -151,11 +155,11 @@ def main(
     else:
         num_non_steering = int(non_steering_proportion * population)
         non_steering_ids = set(random.sample(range(population), num_non_steering))
-    print(f"Non-steering nodes ({len(non_steering_ids)}/{population}): {sorted(non_steering_ids)}")
+        print(f"Non-steering nodes ({len(non_steering_ids)}/{population}): {sorted(non_steering_ids)}")
 
     num_non_aggregating = int(non_aggregating_proportion * population)
 
-    _assign_random_topology(nodes)
+    _assign_topology(nodes)
 
     for node in nodes:
         node.init_profile()
@@ -180,14 +184,19 @@ def main(
         for node in crashed_nodes:
             node.crash()
 
-        # Non-aggregating nodes skip the entire gossip phase; subset is re-drawn each iteration
+        # Non-aggregating nodes are offline for non_aggregating_duration rounds then rejoin;
+        # subset is re-drawn each iteration. Full gossip_rounds always run.
         non_aggregating_nodes = random.sample(nodes, num_non_aggregating) if num_non_aggregating > 0 else []
+        offline_until = non_aggregating_duration if non_aggregating_duration is not None else gossip_rounds
         for node in non_aggregating_nodes:
             node.crash()
 
         for gossip_iter in range(gossip_rounds):
             if gossip_iter == crash_duration_rounds:
                 for node in crashed_nodes:
+                    node.recover()
+            if gossip_iter == offline_until:
+                for node in non_aggregating_nodes:
                     node.recover()
             for node in nodes:
                 node.send()
@@ -267,6 +276,7 @@ def main(
         "alpha": alpha,
         "non_steering_proportion": non_steering_proportion,
         "non_aggregating_proportion": non_aggregating_proportion,
+        "non_aggregating_duration": offline_until,
         "crash_fraction": crash_fraction,
         "crash_duration_rounds": crash_duration_rounds,
         "gossip_rounds": gossip_rounds,
@@ -280,4 +290,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main(day="2023-08-15", alpha=0.075, with_battery=True, plot=True)
+    main(day="2023-01-18", alpha=0.075, with_battery=True, plot=True)
