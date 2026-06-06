@@ -16,6 +16,7 @@ class Node:
         self.queue = []
         self.neighbours = []
         self.estimate = []
+        self.crashed = False
 
     def init_profile(self):
         self.local_profile = [0.0] * len(self.desired_profile)
@@ -31,10 +32,18 @@ class Node:
         self.queue = []
         self.estimate = []
 
+    def crash(self):
+        self.crashed = True
+
+    def recover(self):
+        self.crashed = False
+
     def add_neighbours(self, neighbours):
         self.neighbours = neighbours
 
     def send(self):
+        if self.crashed:
+            return
 
         mass_send = [x / 2 for x in self.mass]
         weight_send = self.weight / 2
@@ -48,6 +57,8 @@ class Node:
         target.queue.append((mass_send, weight_send))
 
     def receive(self):
+        if self.crashed:
+            return
         for mass, weight in self.queue:
             self.mass = list(map(lambda x, y: x + y, self.mass, mass))
             self.weight += weight

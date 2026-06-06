@@ -1,5 +1,5 @@
 import pandas as pd
-from main import main
+from main_fully_connected import main
 
 
 def run_alpha_sweep():
@@ -30,7 +30,7 @@ def run_alpha_sweep():
         ascending=False
     )
 
-    df.to_excel("alpha_sweep_with_convergence_results.xlsx", index=False)
+    df.to_excel("full_alpha_sweep_with_convergence_results.xlsx", index=False)
 
     print("\nSaved results to alpha_sweep_results.xlsx")
     print(df)

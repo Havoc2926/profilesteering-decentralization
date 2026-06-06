@@ -31,7 +31,13 @@ def create_devices():
         HeatPump(),
     ]
 
-def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
+def main(alpha=1.0, non_steering_proportion=0.0,
+         crash_fraction=0.0, crash_duration_rounds=0,
+         seed=None, plot=True):
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+
     profile_length = 96
     population = 10
     gossip_rounds = 60
@@ -66,6 +72,9 @@ def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
     initial_obj = objective(initial_x, p)
 
     objective_history = []
+    rmse_history = []
+
+    num_crashed = int(crash_fraction * population)
 
     print(f"Initial objective: {initial_obj}")
     previous_obj = initial_obj
@@ -76,20 +85,34 @@ def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
         for node in nodes:
             node.reset_push_sum()
 
+        # Crash a random subset for this gossip phase
+        crashed_nodes = random.sample(nodes, num_crashed) if num_crashed > 0 else []
+        for node in crashed_nodes:
+            node.crash()
+
         for gossip_iter in range(gossip_rounds):
+            if gossip_iter == crash_duration_rounds:
+                for node in crashed_nodes:
+                    node.recover()
             for node in nodes:
                 node.send()
-
             for node in nodes:
                 node.receive()
 
-        # Check Push-Sum accuracy BEFORE steering
-        true_x_before_steering = compute_true_aggregate(nodes, profile_length)
+        # Ensure full recovery even when crash_duration_rounds >= gossip_rounds
+        for node in nodes:
+            node.recover()
 
+        # Measure Push-Sum accuracy and track per-node RMSE
+        true_x_before_steering = compute_true_aggregate(nodes, profile_length)
+        node_rmses = []
         for node in nodes:
             estimate = node.make_estimate()
-            error = objective(estimate, true_x_before_steering)
-            print(f"Node {node.id} estimate error: {error}")
+            rmse = np.sqrt(np.mean([(e - t) ** 2 for e, t in zip(estimate, true_x_before_steering)]))
+            node_rmses.append(rmse)
+            error = np.linalg.norm([e - t for e, t in zip(estimate, true_x_before_steering)])
+            print(f"Node {node.id} estimate error: {error:.4f}")
+        rmse_history.append(float(np.mean(node_rmses)))
 
         # Now do local Profile Steering (skipped for non-steering nodes)
         improvements = []
@@ -117,9 +140,11 @@ def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
     print("\nFinished!")
     final_x = compute_true_aggregate(nodes, profile_length)
     final_obj = objective(final_x, p)
+    aggregate_rmse = float(np.mean(rmse_history))
     print(f"Initial objective: {initial_obj}")
     print(f"Final objective: {final_obj}")
     print(f"Improvement: {initial_obj - final_obj}")
+    print(f"Aggregate RMSE (mean over iterations): {aggregate_rmse:.4f}")
 
     plt.figure()
     plt.plot(range(len(objective_history)), objective_history, marker="o")
@@ -136,11 +161,14 @@ def main(alpha=1.0, non_steering_proportion=0.0, plot=True):
         "alpha": alpha,
         "non_steering_proportion": non_steering_proportion,
         "non_steering_count": num_non_steering,
+        "crash_fraction": crash_fraction,
+        "crash_duration_rounds": crash_duration_rounds,
         "initial_objective": initial_obj,
         "final_objective": final_obj,
         "improvement": initial_obj - final_obj,
         "relative_improvement": (initial_obj - final_obj) / initial_obj,
         "iterations": len(objective_history),
+        "aggregate_rmse": aggregate_rmse,
     }
 
 if __name__ == "__main__":
