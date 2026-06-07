@@ -15,7 +15,6 @@ from main_real_data import (
     date_to_day_index,
     add_profiles,
     objective,
-    _assign_topology,
     INTERVALS_PER_DAY,
     HOUSE_IDS,
     DATA_PATH,
@@ -27,6 +26,32 @@ def compute_true_aggregate(nodes, profile_length):
     for node in nodes:
         total = add_profiles(total, node.local_profile)
     return total
+
+
+def _assign_random_topology(nodes, edge_prob=0.3):
+    """Random connected graph (Erdos-Renyi + spanning tree) over the given node list."""
+    n = len(nodes)
+    if n == 0:
+        return
+    adj = {i: set() for i in range(n)}
+
+    unvisited = list(range(1, n))
+    random.shuffle(unvisited)
+    visited = [0]
+    for v in unvisited:
+        u = random.choice(visited)
+        adj[u].add(v)
+        adj[v].add(u)
+        visited.append(v)
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if j not in adj[i] and random.random() < edge_prob:
+                adj[i].add(j)
+                adj[j].add(i)
+
+    for i, node in enumerate(nodes):
+        node.add_neighbours([nodes[j] for j in sorted(adj[i])])
 
 
 
@@ -44,9 +69,6 @@ def main(
     for the entire experiment — they never aggregate, never steer, and their
     local_profile stays at the initialised value throughout.
 
-    The ring topology is constructed over all 24 nodes before any are removed,
-    so the graph structure is identical regardless of which nodes go offline.
-    Offline nodes simply never call send(), receive(), or profile_steering_step().
     Online nodes use population = total N, so their push-sum estimates are
     biased upward by N_total / N_online when offline_fraction > 0.
     The true objective is computed over all N nodes (offline nodes' static
@@ -102,8 +124,8 @@ def main(
     print(f"Offline nodes ({len(offline_nodes)}/{population}): {sorted(offline_id_set)}")
     print(f"Online nodes  ({len(online_nodes)}/{population})")
 
-    # Ring is built over all 24 nodes; offline nodes simply never call send/receive
-    _assign_topology(all_nodes)
+    # Topology is built only over online nodes; offline nodes have no neighbours
+    _assign_random_topology(online_nodes)
 
     for node in all_nodes:
         node.init_profile()
